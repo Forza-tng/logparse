@@ -1,0 +1,335 @@
+#!/bin/bash
+
+# shellcheck shell=bash
+
+# Caddy webserver JSON log parser
+# version 0.1.0
+#
+# This script reads a Caddy logfile in JSON format and
+# outputs it in Apache Common Log Format.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2024 Forza <forza@tnonline.net>
+
+
+# Default output format
+format="common"
+# Default config file
+config_file=""
+
+# JSON selectors available in Caddy JSON logs
+# shellcheck disable=SC2016
+declare -A selectors=(
+	[ts]='.ts'
+	[datetime]='.ts | strftime("%Y-%m-%d %H:%M:%S")'
+	[datetime_l]='.ts | strflocaltime("%Y-%m-%d %H:%M:%S %Z")'
+	[datetime_ms]='(.ts | tostring | split(".") | .[1][:3]) as $ms | .ts | strflocaltime("%Y-%m-%d %H:%M:%S.") + $ms +  strflocaltime(" %Z")'	
+	[datetime_iso]='.ts | todateiso8601'
+	[client_ip]='.request.client_ip'
+	[remote_ip]='.request.remote_ip'
+	[remote_port]='.request.remote_port'
+	[proto]='.request.proto'
+	[method]='.request.method'
+	[host]='.request.host'
+	[uri]='.request.uri'
+	[user_agent]='.request.headers["User-Agent"][0]'
+	[referer]='.request.headers.Referer[0]'
+	[accept]='.request.headers.Accept[0]'
+	[accept_encoding]='.request.headers["Accept-Encoding"][0]'
+	[tls_resumed]='.request.tls.resumed'
+	[tls_version]='.request.tls.version as $version | 
+		  if $version == 769 then "TLS 1.0" 
+		elif $version == 770 then "TLS 1.1" 
+		elif $version == 771 then "TLS 1.2" 
+		elif $version == 772 then "TLS 1.3" 
+		else $version end'
+	[tls_cipher_suite]='.request.tls.cipher_suite as $cs | 
+		   if $cs == 5 then "TLS_RSA_WITH_RC4_128_SHA"
+		 elif $cs == 10 then "TLS_RSA_WITH_3DES_EDE_CBC_SHA"
+		 elif $cs == 47 then "TLS_RSA_WITH_AES_128_CBC_SHA"
+		 elif $cs == 53 then "TLS_RSA_WITH_AES_256_CBC_SHA"
+		 elif $cs == 60 then "TLS_RSA_WITH_AES_128_CBC_SHA256"
+		 elif $cs == 156 then "TLS_RSA_WITH_AES_128_GCM_SHA256"
+		 elif $cs == 157 then "TLS_RSA_WITH_AES_256_GCM_SHA384"
+		 elif $cs == 49159 then "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA"
+		 elif $cs == 49169 then "TLS_ECDHE_RSA_WITH_RC4_128_SHA"
+		 elif $cs == 49170 then "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA"
+		 elif $cs == 49171 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+		 elif $cs == 49172 then "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
+		 elif $cs == 49161 then "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"
+		 elif $cs == 49162 then "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
+		 elif $cs == 49191 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+		 elif $cs == 49199 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+		 elif $cs == 49187 then "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+		 elif $cs == 49195 then "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+		 elif $cs == 49200 then "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+		 elif $cs == 49196 then "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+		 elif $cs == 52392 then "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+		 elif $cs == 52393 then "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
+		 elif $cs == 4865 then "TLS_AES_128_GCM_SHA256"
+		 elif $cs == 4866 then "TLS_AES_256_GCM_SHA384"
+		 elif $cs == 4867 then "TLS_CHACHA20_POLY1305_SHA256"
+		 elif $cs == 22016 then "TLS_FALLBACK_SCSV"
+		 elif $cs == 52392 then "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305" 
+		 elif $cs == 52393 then "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305" else $cs end'
+ 	[tls_proto]='.request.tls.proto'
+	[tls_server_name]='.request.tls.server_name'
+	[bytes_read]='.bytes_read'
+	[user_id]='.user_id'
+	[duration]='.duration'
+	[size]='.size'
+	[status]='.status'
+	[rh_content_length]='.resp_headers["Content-Length"][0]'
+	[rh_content_type]='.resp_headers["Content-Type"][0]'
+	[rh_server]='.resp_headers.Server[0]'
+	[rh_x_frame_options]='.resp_headers["X-Frame-Options"][0]'
+	[rh_last_modified]='.resp_headers["Last-Modified"][0]'
+	[rh_alt_svc]='.resp_headers["Alt-Svc"][0]'
+	[rh_vary]='.resp_headers.Vary[0]'
+	[rh_etag]='.resp_headers.Etag[0]'
+	[rh_x_content_type_options]='.resp_headers["X-Content-Type-Options"][0]'
+	[rh_referrer_policy]='.resp_headers["Referrer-Policy"][0]'
+	[rh_cache_control]='.resp_headers["Cache-Control"][0]'
+	[rh_accept_ranges]='.resp_headers["Accept-Ranges"][0]'
+	[rh_content_security_policy]='.resp_headers["Content-Security-Policy"][0]'
+	[rh_strict_transport_security]='.resp_headers["Strict-Transport-Security"][0]'
+	[rh_permissions_policy]='.resp_headers["Permissions-Policy"][0]'
+)
+
+# Allows adding various placeholders to the output
+declare -A placeholders=(
+	[_]=' '
+	[space]=' '
+	[tab]='\t'
+	[q]='\"'
+	[quote]='\"'
+	[squote]="'"
+	[i]='|'
+	[pipe]='|'
+	[lsqb]='['
+	[rsqb]=']'
+	[lbrace]='('
+	[rbrace]=')'
+	[lcurly]='{'
+	[rcurly]='}'
+	[colon]=':'
+	[semicolon]=';'
+	[comma]=','
+	[dot]='.'
+	[slash]='/'
+	[backslash]='\\'
+	[hyphen]='-'
+	[underscore]='_'
+	[plus]='+'
+	[equals]='='
+	[ampersand]='&'
+	[percent]='%'
+	[dollar]='$'
+	[exclamation]='!'
+)
+
+# Show command line syntax
+show_help() {
+	cat <<END
+Usage: $0 [-c | -C | -s "selectors"] [-F <config_file>] filename
+
+Options:
+  -c, --common       Apache Common Log Format (default)
+  -C, --combined     Apache Combined Log Format
+  -s, --selector     Use a space separated list of selectors
+  -F, --config-file  Use a configuration file
+  -h, --help         Show this help message and exit
+
+END
+}
+
+die() {
+	local message="${1:-Died}"
+	if [ $DEBUG -eq 1 ]; then
+		echo "${BASH_SOURCE[1]}: line ${BASH_LINENO[0]}: ${FUNCNAME[1]}: $message." >&2
+	else
+		echo "$message" >&2
+	fi
+	exit 1
+}
+
+debug() {
+	if [ "$DEBUG" -eq 1 ]; then
+		if [ -n "$2" ]; then
+			eval "$2"
+		else
+			echo "$1"
+		fi
+	fi
+}
+# Function to output logs in a custom format
+log_format() {
+	# Generate the jq filter string dynamically
+	local filter_parts=""
+	local output_parts=""
+	for var in "$@"; do
+		debug "log_format: var: $var"
+		if [ -n "${placeholders[$var]}" ]; then
+			debug "log_format: placeholder: $var"
+			output_parts+="\(\$${var})"
+			filter_parts+="
+				| ( \"${placeholders[$var]}\" ) as \$$var"
+		elif [ -n "${selectors[$var]}" ]; then
+			debug "log_format: selector: $var"
+			# 'jq' needs to test if the selector exists and if it is empty
+			output_parts+="\(\$${var})"
+			filter_parts+="
+				| (	if ${selectors[$var]} == \"\" then \"-\"
+				else ${selectors[$var]}
+				end	) as \$$var"
+		fi
+	done
+
+	if [ $DEBUG -eq 1 ]; then
+		echo jq -r ". ${filter_parts} | \"${output_parts}\"" "${file}"
+	else
+		jq -r ". ${filter_parts} | \"${output_parts}\"" "${file}"
+	fi
+}
+
+######################
+# Start main section #
+######################
+
+# Enable enable debug output
+DEBUG=$((DEBUG == 1 ? 1 : 0))
+
+debug "main: command_line options: $#"
+# Parse command line options
+while [ "$#" -gt 0 ]; do
+	case $1 in
+		-c|--common)
+			format="common"
+			shift
+			;;
+		-C|--combined)
+			format="combined"
+			shift
+			;;
+		-F|--config-file)
+			config_file="$2"
+			if [ -z "${config_file}" ]; then
+				die "Error: No configuration file specified."
+			fi
+			use_config_file=1
+			shift 2
+			;;
+		-s|--selector)
+			use_selectors_c="$2"
+			if [ -z "${use_selectors_c}" ]; then
+				die "Error: No output selectors specified."
+			fi
+			format="custom"
+			shift 2
+			;;
+		-h|--help)
+			show_help
+			exit 0
+			;;
+		*)
+			file="$1"
+			shift
+			;;
+	esac
+done
+
+# Check if input files are readable
+if [ -z "${file}" ]; then
+	show_help
+	die "Error: No input file provided."
+elif [ ! -r "${file}" ]; then
+	die "Error: Input file '${file}' is not readable."
+fi
+
+if [ ! -z ${use_config_file+x} ]; then
+	if [ -r "${config_file}" ]; then
+		debug "load_config: config_file: '$config_file'"
+		. "${config_file}" || die "Error: Could not load config file"
+		debug "load_config: format: $format"
+		debug "load_config: use_selectors: $use_selectors"
+		debug - 'for a in "${!placeholders[@]}"; do echo "load_config: placeholders: ${a}: \"${placeholders[$a]}\" " ; done'
+		debug - 'for a in "${!selectors[@]}"; do echo "load_config: selectors: $a: \"${selectors[$a]}\" " ; done'
+	else
+		die "Error: Could not read config file '${config_file}'"
+	fi
+fi
+
+if [ -n "${use_selectors_c}" ]; then
+	use_selectors="${use_selectors_c}"
+	debug "main: use_selectors override: $use_selectors"
+fi
+
+# Process JSON file using the chosen format
+debug "main: format: $format"
+case "$format" in
+	common)
+		# Common Log format
+		log_format \
+			client_ip \
+			space user_id \
+			space lsqb datetime rsqb \
+			space quote method \
+			space uri space proto quote \
+			space status space size
+		;;
+	combined)
+		# Combined Log format
+		# '_' can be used instead of 'space'
+		# 'q' can be used instead of 'quote'
+		log_format \
+			client_ip \
+			_ user_id \
+			_ lsqb datetime rsqb \
+			_ q method _ uri _ proto q \
+			_ status \
+			_ size \
+			_ q referer q \
+			_ q user_agent q
+		;;
+	custom)
+		debug "main: calling: log_format $use_selectors"
+		# Only use specified selectors
+		# shellcheck disable=SC2086
+ 		log_format $use_selectors 		
+		;;
+esac
+
+
+
+####
+# A note on datetime format in 'jq'.
+# 1. there is no subsecond support
+# 2. timezone support is currently not available in
+#    todateiso8601 builtin jq datetime function.
+# 3. strftime function can be used, but is platform
+#    dependant and some formating styles may not be
+#    implented or may not properly.
+# 4. strflocaltime converts UTC source to local timezone.
+# 5. jq assumes epoch time to be UTC.
+# https://jqlang.github.io/jq/manual/#dates
+
+####
+# Apaches common and combined log formats are widely supported
+# in log readers and easily read by humans.
+
+# https://httpd.apache.org/docs/current/da/logs.html
+#
+# Apache Commong Log format:
+# "%h %l %u %t \"%r\" %>s %b"
+
+# Apache Combined LogFormat:
+# "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\"" 
+#
+# Where:
+# %h is the remote host (client IP)
+# %l is the remote logname (not used, so we'll use -)
+# %u is the authenticated user
+# %t is the time the request was received
+# %r is the request line from the client ("method uri proto")
+# %>s is the status code
+# %b is the size of the object returned to the client
