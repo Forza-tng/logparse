@@ -1,15 +1,3 @@
-
-```text
- _                                       
-| |                                      
-| | ___   __ _ _ __   __ _ _ __ ___  ___ 
-| |/ _ \ / _` | '_ \ / _` | '__/ __|/ _ \
-| | (_) | (_| | |_) | (_| | |  \__ \  __/
-|_|\___/ \__, | .__/ \__,_|_|  |___/\___|
-          __/ | |                        
-         |___/|_|                        
-```
-
 # logparse
 
 Logparse is a shell script that parses Caddy JSON log files and outputs them as formatted text. It supports the Common Log Format and Combined Log Format, usually used by traditional HTTP servers like Apache, however it is easy to customise the output using the --selector option.
