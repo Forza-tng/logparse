@@ -3,7 +3,7 @@
 # shellcheck shell=bash
 
 # Caddy webserver JSON log parser
-# version 0.1.0
+# version 0.1.1
 #
 # This script reads a Caddy logfile in JSON format and
 # outputs it in Apache Common Log Format.
@@ -270,32 +270,34 @@ case "$format" in
 	common)
 		# Common Log format
 		log_format \
-			client_ip \
-			space user_id \
-			space lsqb datetime rsqb \
-			space quote method \
-			space uri space proto quote \
-			space status space size
+		client_ip \
+		space hyphen \
+		space user_id \
+		space lsqb datetime rsqb \
+		space quote method \
+		space uri space proto quote \
+		space status space size
 		;;
 	combined)
 		# Combined Log format
 		# '_' can be used instead of 'space'
 		# 'q' can be used instead of 'quote'
 		log_format \
-			client_ip \
-			_ user_id \
-			_ lsqb datetime rsqb \
-			_ q method _ uri _ proto q \
-			_ status \
-			_ size \
-			_ q referer q \
-			_ q user_agent q
+		client_ip \
+		_ hyphen \
+		_ user_id \
+		_ lsqb datetime rsqb \
+		_ q method _ uri _ proto q \
+		_ status \
+		_ size \
+		_ q referer q \
+		_ q user_agent q
 		;;
 	custom)
 		debug "main: calling: log_format $use_selectors"
 		# Only use specified selectors
 		# shellcheck disable=SC2086
- 		log_format $use_selectors 		
+		log_format $use_selectors		
 		;;
 esac
 
@@ -327,7 +329,7 @@ esac
 #
 # Where:
 # %h is the remote host (client IP)
-# %l is the remote logname (not used, so we'll use -)
+# %l is the remote identity (not used, so we'll use -)
 # %u is the authenticated user
 # %t is the time the request was received
 # %r is the request line from the client ("method uri proto")
