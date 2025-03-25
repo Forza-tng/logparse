@@ -3,7 +3,7 @@
 # shellcheck shell=bash
 
 # Caddy webserver JSON log parser
-# version 0.1.1
+# version 0.1.2
 #
 # This script reads a Caddy logfile in JSON format and
 # outputs it in Apache Common Log Format.
@@ -23,7 +23,7 @@ declare -A selectors=(
 	[ts]='.ts'
 	[datetime]='.ts | strftime("%Y-%m-%d %H:%M:%S")'
 	[datetime_l]='.ts | strflocaltime("%Y-%m-%d %H:%M:%S %Z")'
-	[datetime_ms]='(.ts | tostring | split(".") | .[1][:3]) as $ms | .ts | strflocaltime("%Y-%m-%d %H:%M:%S.") + $ms +  strflocaltime(" %Z")'	
+	[datetime_ms]='(.ts | tostring | split(".") | .[1][:3]) as $ms | .ts | strflocaltime("%Y-%m-%d %H:%M:%S.") + $ms +	strflocaltime(" %Z")'
 	[datetime_iso]='.ts | todateiso8601'
 	[client_ip]='.request.client_ip'
 	[remote_ip]='.request.remote_ip'
@@ -37,42 +37,43 @@ declare -A selectors=(
 	[accept]='.request.headers.Accept[0]'
 	[accept_encoding]='.request.headers["Accept-Encoding"][0]'
 	[tls_resumed]='.request.tls.resumed'
-	[tls_version]='.request.tls.version as $version | 
-		  if $version == 769 then "TLS 1.0" 
-		elif $version == 770 then "TLS 1.1" 
-		elif $version == 771 then "TLS 1.2" 
-		elif $version == 772 then "TLS 1.3" 
+	[tls_version]='.request.tls.version as $version |
+		  if $version == 769 then "TLS 1.0"
+		elif $version == 770 then "TLS 1.1"
+		elif $version == 771 then "TLS 1.2"
+		elif $version == 772 then "TLS 1.3"
 		else $version end'
-	[tls_cipher_suite]='.request.tls.cipher_suite as $cs | 
-		   if $cs == 5 then "TLS_RSA_WITH_RC4_128_SHA"
-		 elif $cs == 10 then "TLS_RSA_WITH_3DES_EDE_CBC_SHA"
-		 elif $cs == 47 then "TLS_RSA_WITH_AES_128_CBC_SHA"
-		 elif $cs == 53 then "TLS_RSA_WITH_AES_256_CBC_SHA"
-		 elif $cs == 60 then "TLS_RSA_WITH_AES_128_CBC_SHA256"
-		 elif $cs == 156 then "TLS_RSA_WITH_AES_128_GCM_SHA256"
-		 elif $cs == 157 then "TLS_RSA_WITH_AES_256_GCM_SHA384"
-		 elif $cs == 49159 then "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA"
-		 elif $cs == 49169 then "TLS_ECDHE_RSA_WITH_RC4_128_SHA"
-		 elif $cs == 49170 then "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA"
-		 elif $cs == 49171 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
-		 elif $cs == 49172 then "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
-		 elif $cs == 49161 then "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"
-		 elif $cs == 49162 then "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
-		 elif $cs == 49191 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
-		 elif $cs == 49199 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
-		 elif $cs == 49187 then "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
-		 elif $cs == 49195 then "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
-		 elif $cs == 49200 then "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
-		 elif $cs == 49196 then "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
-		 elif $cs == 52392 then "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
-		 elif $cs == 52393 then "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
-		 elif $cs == 4865 then "TLS_AES_128_GCM_SHA256"
-		 elif $cs == 4866 then "TLS_AES_256_GCM_SHA384"
-		 elif $cs == 4867 then "TLS_CHACHA20_POLY1305_SHA256"
-		 elif $cs == 22016 then "TLS_FALLBACK_SCSV"
-		 elif $cs == 52392 then "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305" 
-		 elif $cs == 52393 then "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305" else $cs end'
- 	[tls_proto]='.request.tls.proto'
+	# golang cipher suites are defined in
+	# https://github.com/golang/go/blob/master/src/crypto/tls/cipher_suites.go
+	[tls_cipher_suite]='.request.tls.cipher_suite as $cs |
+		  if $cs == 5 then "TLS_RSA_WITH_RC4_128_SHA"
+		elif $cs == 10 then "TLS_RSA_WITH_3DES_EDE_CBC_SHA"
+		elif $cs == 47 then "TLS_RSA_WITH_AES_128_CBC_SHA"
+		elif $cs == 53 then "TLS_RSA_WITH_AES_256_CBC_SHA"
+		elif $cs == 60 then "TLS_RSA_WITH_AES_128_CBC_SHA256"
+		elif $cs == 156 then "TLS_RSA_WITH_AES_128_GCM_SHA256"
+		elif $cs == 157 then "TLS_RSA_WITH_AES_256_GCM_SHA384"
+		elif $cs == 49159 then "TLS_ECDHE_ECDSA_WITH_RC4_128_SHA"
+		elif $cs == 49169 then "TLS_ECDHE_RSA_WITH_RC4_128_SHA"
+		elif $cs == 49170 then "TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA"
+		elif $cs == 49171 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA"
+		elif $cs == 49172 then "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA"
+		elif $cs == 49161 then "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA"
+		elif $cs == 49162 then "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA"
+		elif $cs == 49191 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+		elif $cs == 49199 then "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"
+		elif $cs == 49187 then "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256"
+		elif $cs == 49195 then "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
+		elif $cs == 49200 then "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+		elif $cs == 49196 then "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+		elif $cs == 52392 then "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+		elif $cs == 52393 then "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"
+		elif $cs == 4865 then "TLS_AES_128_GCM_SHA256"
+		elif $cs == 4866 then "TLS_AES_256_GCM_SHA384"
+		elif $cs == 4867 then "TLS_CHACHA20_POLY1305_SHA256"
+		elif $cs == 22016 then "TLS_FALLBACK_SCSV"
+		else $cs end'
+	[tls_proto]='.request.tls.proto'
 	[tls_server_name]='.request.tls.server_name'
 	[bytes_read]='.bytes_read'
 	[user_id]='.user_id'
@@ -131,14 +132,16 @@ declare -A placeholders=(
 # Show command line syntax
 show_help() {
 	cat <<END
-Usage: $0 [-c | -C | -s "selectors"] [-F <config_file>] filename
+Usage: $0 [-c | -C | -s "selectors"] [-F <config_file>] [-t [NUM] [-f]] filename
 
 Options:
-  -c, --common       Apache Common Log Format (default)
-  -C, --combined     Apache Combined Log Format
-  -s, --selector     Use a space separated list of selectors
-  -F, --config-file  Use a configuration file
-  -h, --help         Show this help message and exit
+  -c, --common		 Apache Common Log Format (default)
+  -C, --combined	 Apache Combined Log Format
+  -s, --selector	 Use a space separated list of selectors
+  -F, --config-file	 Use a configuration file
+  -t, --tail [NUM]	 Output the last NUM lines from log file (default: 15)
+  -f, --follow		 Continuously monitor log file for new entries
+  -h, --help		 Show this help message and exit
 
 END
 }
@@ -185,10 +188,18 @@ log_format() {
 		fi
 	done
 
-	if [ $DEBUG -eq 1 ]; then
-		echo jq -r ". ${filter_parts} | \"${output_parts}\"" "${file}"
+	if [ "$tail_mode" -eq 1 ]; then
+		if [ "$DEBUG" -eq 1 ]; then
+			echo tail $tail_opts "$file" '|' jq -r ". ${filter_parts} | \"${output_parts}\""
+		else
+			tail $tail_opts "$file" | jq -r ". ${filter_parts} | \"${output_parts}\""
+		fi
 	else
-		jq -r ". ${filter_parts} | \"${output_parts}\"" "${file}"
+		if [ "$DEBUG" -eq 1 ]; then
+			echo jq -r ". ${filter_parts} | \"${output_parts}\"" "${file}"
+		else
+			jq -r ". ${filter_parts} | \"${output_parts}\"" "${file}"
+		fi
 	fi
 }
 
@@ -198,6 +209,10 @@ log_format() {
 
 # Enable enable debug output
 DEBUG=$((DEBUG == 1 ? 1 : 0))
+
+# Tail mode disabled by default
+tail_rows=15
+tail_mode=0
 
 debug "main: command_line options: $#"
 # Parse command line options
@@ -226,6 +241,20 @@ while [ "$#" -gt 0 ]; do
 			fi
 			format="custom"
 			shift 2
+			;;
+		-t|--tail)
+			tail_mode=1
+			if [[ "$2" =~ ^[0-9]+$ ]]; then
+				tail_opts="-n $2"
+				shift 2
+			else
+				tail_opts="-n $tail_rows"
+				shift
+			fi
+			;;
+		-f|--follow)
+			tail_opts+=" -F"
+			shift
 			;;
 		-h|--help)
 			show_help
@@ -297,7 +326,7 @@ case "$format" in
 		debug "main: calling: log_format $use_selectors"
 		# Only use specified selectors
 		# shellcheck disable=SC2086
-		log_format $use_selectors		
+		log_format $use_selectors
 		;;
 esac
 
@@ -307,10 +336,10 @@ esac
 # A note on datetime format in 'jq'.
 # 1. there is no subsecond support
 # 2. timezone support is currently not available in
-#    todateiso8601 builtin jq datetime function.
+#	 todateiso8601 builtin jq datetime function.
 # 3. strftime function can be used, but is platform
-#    dependant and some formating styles may not be
-#    implented or may not properly.
+#	 dependant and some formating styles may not be
+#	 implented or may not properly.
 # 4. strflocaltime converts UTC source to local timezone.
 # 5. jq assumes epoch time to be UTC.
 # https://jqlang.github.io/jq/manual/#dates
@@ -318,14 +347,14 @@ esac
 ####
 # Apaches common and combined log formats are widely supported
 # in log readers and easily read by humans.
-
-# https://httpd.apache.org/docs/current/da/logs.html
+#
+# https://httpd.apache.org/docs/current/en/logs.html
 #
 # Apache Commong Log format:
 # "%h %l %u %t \"%r\" %>s %b"
-
+#
 # Apache Combined LogFormat:
-# "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\"" 
+# "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-agent}i\""
 #
 # Where:
 # %h is the remote host (client IP)
