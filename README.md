@@ -18,8 +18,8 @@ Options:
   -C, --combined     Apache Combined Log Format
   -s, --selector     Use a space separated list of selectors
   -F, --config-file  Use a configuration file
-  -t, --tail [NUM]	 Output the last NUM lines from log file (default: 15)
-  -f, --follow		 Continuously monitor log file for new entries
+  -t, --tail [NUM]   Output the last NUM lines from log file (default: 15)
+  -f, --follow       Continuously monitor log file for new entries
   -h, --help         Show this help message and exit
 ```
 
