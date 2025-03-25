@@ -12,12 +12,14 @@ The config file allows for changing default output format, add additional select
 ## Usage
 
 ```text
-Usage: /usr/bin/logparse [-c | -C | -s "selectors"] [-F <config_file>] filename
+Usage: /usr/bin/logparse [-c | -C | -s "selectors"] [-F <config_file>] [-t [NUM] [-f]] filename
 Options:
   -c, --common       Apache Common Log Format (default)
   -C, --combined     Apache Combined Log Format
   -s, --selector     Use a space separated list of selectors
   -F, --config-file  Use a configuration file
+  -t, --tail [NUM]	 Output the last NUM lines from log file (default: 15)
+  -f, --follow		 Continuously monitor log file for new entries
   -h, --help         Show this help message and exit
 ```
 
