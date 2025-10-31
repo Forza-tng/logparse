@@ -3,13 +3,13 @@
 # shellcheck shell=bash
 
 # Caddy webserver JSON log parser
-# version 0.1.2
+# version 0.2.0
 #
 # This script reads a Caddy logfile in JSON format and
 # outputs it in Apache Common Log Format.
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright 2024 Forza <forza@tnonline.net>
+# Copyright 2025 Forza <forza@tnonline.net>
 
 
 # Default output format
@@ -20,6 +20,9 @@ config_file=""
 # JSON selectors available in Caddy JSON logs
 # shellcheck disable=SC2016
 declare -A selectors=(
+	[level]='.level'
+    [logger]='.logger'
+    [msg]='.msg'
 	[ts]='.ts'
 	[datetime]='.ts | strftime("%Y-%m-%d %H:%M:%S")'
 	[datetime_l]='.ts | strflocaltime("%Y-%m-%d %H:%M:%S %Z")'
@@ -32,10 +35,32 @@ declare -A selectors=(
 	[method]='.request.method'
 	[host]='.request.host'
 	[uri]='.request.uri'
+	# Aggregate: all request headers flattened
+	[req_headers]='(.request.headers // {}) 
+	    | to_entries
+	    | map(.key + "=" + (.value | join(", ")))
+	    | join("; ")'
 	[user_agent]='.request.headers["User-Agent"][0]'
 	[referer]='.request.headers.Referer[0]'
 	[accept]='.request.headers.Accept[0]'
 	[accept_encoding]='.request.headers["Accept-Encoding"][0]'
+	[authorization]='.request.headers.Authorization[0]'
+	[dnt]='.request.headers.Dnt[0]'
+	[origin]='.request.headers.Origin[0]'
+	[priority]='.request.headers.Priority[0]'
+	[content_length]='.request.headers["Content-Length"][0]'
+	[content_type]='.request.headers["Content-Type"][0]'
+	[accept_language]='.request.headers["Accept-Language"][0]'
+	[sec_fetch_dest]='.request.headers["Sec-Fetch-Dest"][0]'
+	[sec_fetch_mode]='.request.headers["Sec-Fetch-Mode"][0]'
+	[sec_fetch_site]='.request.headers["Sec-Fetch-Site"][0]'
+	[sec_fetch_user]='.request.headers["Sec-Fetch-User"][0]'
+	[sec_ch_ua]='.request.headers["Sec-CH-UA"][0]'
+	[sec_ch_ua_platform]='.request.headers["Sec-CH-UA-Platform"][0]'
+	[sec_ch_ua_mobile]='.request.headers["Sec-CH-UA-Mobile"][0]'
+	[cookie]='.request.headers.Cookie[0]'
+	[http_protocol_single_cookie_header]='.request.headers["Http.protocol.single-Cookie-Header"][0]'
+	[depth]='.request.headers.Depth[0]'
 	[tls_resumed]='.request.tls.resumed'
 	[tls_version]='.request.tls.version as $version |
 		  if $version == 769 then "TLS 1.0"
@@ -80,21 +105,38 @@ declare -A selectors=(
 	[duration]='.duration'
 	[size]='.size'
 	[status]='.status'
+	# Aggregate: all response headers flattened
+    [rh_headers]='(.resp_headers // {}) 
+	    | to_entries
+	    | map(.key + "=" + (.value | join(", ")))
+	    | join("; ")'
 	[rh_content_length]='.resp_headers["Content-Length"][0]'
 	[rh_content_type]='.resp_headers["Content-Type"][0]'
+	[rh_content_encoding]='.resp_headers["Content-Encoding"][0]'
 	[rh_server]='.resp_headers.Server[0]'
-	[rh_x_frame_options]='.resp_headers["X-Frame-Options"][0]'
 	[rh_last_modified]='.resp_headers["Last-Modified"][0]'
 	[rh_alt_svc]='.resp_headers["Alt-Svc"][0]'
 	[rh_vary]='.resp_headers.Vary[0]'
 	[rh_etag]='.resp_headers.Etag[0]'
-	[rh_x_content_type_options]='.resp_headers["X-Content-Type-Options"][0]'
 	[rh_referrer_policy]='.resp_headers["Referrer-Policy"][0]'
 	[rh_cache_control]='.resp_headers["Cache-Control"][0]'
 	[rh_accept_ranges]='.resp_headers["Accept-Ranges"][0]'
 	[rh_content_security_policy]='.resp_headers["Content-Security-Policy"][0]'
 	[rh_strict_transport_security]='.resp_headers["Strict-Transport-Security"][0]'
 	[rh_permissions_policy]='.resp_headers["Permissions-Policy"][0]'
+	[rh_feature_policy]='.resp_headers["Feature-Policy"][0]'
+	[rh_status]='.resp_headers.Status[0]'
+	[rh_dav]='.resp_headers.Dav[0]'
+	[rh_link]='.resp_headers.Link[0]'
+	[rh_set_cookie]='.resp_headers["Set-Cookie"][0]'
+	[rh_x_content_type_options]='.resp_headers["X-Content-Type-Options"][0]'
+	[rh_x_debug_token]='.resp_headers["X-Debug-Token"][0]'
+	[rh_x_frame_options]='.resp_headers["X-Frame-Options"][0]'
+	[rh_x_permitted_cross_domain_policies]='.resp_headers["X-Permitted-Cross-Domain-Policies"][0]'
+	[rh_x_request_id]='.resp_headers["X-Request-Id"][0]'
+	[rh_x_robots_tag]='.resp_headers["X-Robots-Tag"][0]'
+	[rh_x_user_id]='.resp_headers["X-User-Id"][0]'
+	[rh_x_xss_protection]='.resp_headers["X-Xss-Protection"][0]'
 )
 
 # Allows adding various placeholders to the output
@@ -129,20 +171,33 @@ declare -A placeholders=(
 	[exclamation]='!'
 )
 
+
+# Print all selector names
+list_selectors() {
+	for k in "${!selectors[@]}"; do
+		echo "$k"
+	done | sort
+	echo ""
+	for k in "${!placeholders[@]}"; do
+		echo "$k"
+	done | sort
+}
+
 # Show command line syntax
 show_help() {
 	cat <<END
-Usage: $0 [-c | -C | -s "selectors"] [-F <config_file>] [-t [NUM] [-f]] filename
+Usage: $0 [-c | -C | -s sel] [-F <file>] [-l] [-t <NUM> [-f]] filename
 
 Options:
-  -c, --common		 Apache Common Log Format (default)
-  -C, --combined	 Apache Combined Log Format
-  -s, --selector	 Use a space separated list of selectors
-  -F, --config-file	 Use a configuration file
-  -t, --tail [NUM]	 Output the last NUM lines from log file (default: 15)
-  -f, --follow		 Continuously monitor log file for new entries
-  -h, --help		 Show this help message and exit
-
+  -c, --common              Apache Common Log Format (default).
+  -C, --combined            Apache Combined Log Format.
+  -s, --selector            Selector list, comma-separated: sel1,sel2,sel3
+                            multiple -s is allowed; lists are concatenated.
+  -F, --config-file         Use a configuration file.
+  -t, --tail <num>          Output the last NUM lines from log file (default: 15).
+  -f, --follow              Continuously monitor log file for new entries.
+  -l, --list-selectors      List all available selectors and exit.
+  -h, --help                Show this help message and exit.
 END
 }
 
@@ -235,12 +290,29 @@ while [ "$#" -gt 0 ]; do
 			shift 2
 			;;
 		-s|--selector)
-			use_selectors_c="$2"
-			if [ -z "${use_selectors_c}" ]; then
+			arg="$2"
+		    if [ -z "${arg}" ]; then
 				die "Error: No output selectors specified."
+			fi
+			# Accept comma-separated or space-separated, allow repeats
+			arg="${arg//,/ }"
+			if [ -n "${use_selectors_c}" ]; then
+				use_selectors_c+=" ${arg}"
+			else
+				use_selectors_c="${arg}"
 			fi
 			format="custom"
 			shift 2
+			;;
+		--)
+			# Explicit end-of-options; next token must be the filename
+			shift
+			if [ -z "$1" ]; then
+				die "Error: No input file provided after --."
+			fi
+			file="$1"
+			shift
+			break
 			;;
 		-t|--tail)
 			tail_mode=1
@@ -255,6 +327,10 @@ while [ "$#" -gt 0 ]; do
 		-f|--follow)
 			tail_opts+=" -F"
 			shift
+			;;
+		-l|--list-selectors)
+			list_selectors
+			exit 0
 			;;
 		-h|--help)
 			show_help
